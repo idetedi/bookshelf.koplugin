@@ -46,7 +46,14 @@ local function freeOk(dir)
                 f_files, f_ffree, f_favail, f_fsid, f_flag, f_namemax; int __f_spare[6]; };
             int statvfs(const char *path, struct bookshelf_bc_statvfs *buf);
         ]])
-        local st = ffi.new("struct bookshelf_bc_statvfs")
+        -- The struct above is not glibc's on every target: on 32-bit there is an
+        -- int __f_unused after f_fsid, so the real one is 72 bytes against these
+        -- 68, and statvfs() cleared 4 bytes past an ffi.new of this struct --
+        -- the allocator's own bookkeeping, a segfault some time later. The
+        -- fields read here come before the difference, so only the room is
+        -- wrong: hand statvfs a buffer with plenty of it.
+        local buf = ffi.new("uint8_t[?]", 256)
+        local st = ffi.cast("struct bookshelf_bc_statvfs *", buf)
         if ffi.C.statvfs(dir, st) == 0 then
             _free_ok = tonumber(st.f_bavail) * tonumber(st.f_frsize) >= M.MIN_FREE
         end
